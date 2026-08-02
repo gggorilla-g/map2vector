@@ -1,0 +1,23 @@
+Map2Vector OSM — Proprietary License
+Copyright (c) 2026 Map2Vector. All rights reserved.
+
+This software (the user interface, program code, design and assets in this
+bundle, EXCLUDING third-party components and map data) is proprietary.
+
+You MAY:
+  - Use the hosted service and download the SVG maps it produces for your
+    own design work, including commercial work.
+
+You MAY NOT, without prior written permission:
+  - Copy, modify, reverse-engineer, redistribute, re-host, resell, or
+    republish this source code or a derived version of this application.
+
+Third-party / data notices:
+  - Map data (c) OpenStreetMap contributors, licensed under the Open
+    Database License (ODbL): https://www.openstreetmap.org/copyright
+    The "(c) OpenStreetMap contributors" attribution must be preserved in
+    any output and on any page that displays the maps.
+  - Leaflet (BSD-2-Clause) is bundled and remains under its own license.
+
+Generated SVG maps: you own your use of the maps you generate; the ODbL
+attribution for the underlying OpenStreetMap data must be kept.
