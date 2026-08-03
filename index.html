@@ -840,15 +840,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .btn-primary:not(:disabled):hover{box-shadow:0 6px 20px rgba(59,116,232,.42);}
   @keyframes genGrad{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
   /* SVGダウンロード: 青グラデ + 光沢スイープ + 発光 */
-  .btn-svg{overflow:hidden;}
-  .btn-svg:not(:disabled){
+  .btn-svg,#btnGen{overflow:hidden; position:relative;}
+  .btn-svg:not(:disabled),#btnGen:not(:disabled){
     color:#fff !important; border:none !important;
     background:linear-gradient(120deg,#2f7bff,#39c2ff,#2f7bff,#6a5cff);
     background-size:300% 100%; animation:svgGrad 4.5s ease infinite;
     box-shadow:0 4px 16px rgba(47,123,255,.45);
   }
-  .btn-svg:not(:disabled):hover{box-shadow:0 7px 26px rgba(47,123,255,.62); transform:translateY(-1.5px);}
-  .btn-svg:not(:disabled)::before{
+  .btn-svg:not(:disabled):hover,#btnGen:not(:disabled):hover{box-shadow:0 7px 26px rgba(47,123,255,.62); transform:translateY(-1.5px);}
+  .btn-svg:not(:disabled)::before,#btnGen:not(:disabled)::before{
     content:""; position:absolute; top:0; left:-60%; width:45%; height:100%;
     background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);
     transform:skewX(-20deg); animation:svgShine 3.4s ease-in-out infinite; pointer-events:none;
