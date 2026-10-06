@@ -1,48 +1,62 @@
-// Cloudflare Pages Function — Overpass 取得のキャッシュ用プロキシ（次フェーズ用の雛形）
-// 有効化: この "functions" フォルダ（repo/future-proxy/functions）をリポジトリのルートに移動して push するだけ。
-//   → /api/overpass が使えるようになります。
-// アプリ側: 取得先を公開Overpassミラーから "/api/overpass" に変えると、
-//   同一範囲の再取得がCloudflareのエッジキャッシュに載り、公開サーバーへの負荷とレート制限を大幅に減らせます。
-// 秘匿情報（有料APIキー等）は Pages の環境変数(Settings→Environment variables)に入れて context.env で読みます。
+// Overpass proxy: browser -> /api/osm (same origin) -> Overpass mirrors (server side, hedged)
+const MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter"
+];
+const name = u => /overpass-api\.de/.test(u) ? "de" : /kumi/.test(u) ? "kumi" : /coffee/.test(u) ? "coffee" : u;
+const json = (obj, status, extra) => new Response(JSON.stringify(obj), {
+  status,
+  headers: Object.assign({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, extra || {})
+});
 
-const UPSTREAM = "https://overpass-api.de/api/interpreter"; // 必要なら自前/有料Overpassに変更
-const TTL = 86400; // 秒。地物データは日次程度のキャッシュで十分
-
-export async function onRequestPost(context) {
-  const { request } = context;
-  const body = await request.text(); // "data=<query>"
-  const key = new Request("https://m2v-cache/overpass?" + await sha1(body), { method: "GET" });
-  const cache = caches.default;
-  const hit = await cache.match(key);
-  if (hit) return withCORS(hit);
-
-  const res = await fetch(UPSTREAM, {
-    method: "POST",
-    body,
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "Map2Vector/1.0 (+https://YOUR-DOMAIN; contact: YOUR-EMAIL)",
-    },
+export async function onRequestPost({ request }) {
+  const body = await request.text();
+  if (!/^data=/.test(body) || body.length > 20000) return json({ error: "bad request" }, 400);
+  const probe = request.headers.get("X-M2V-Probe") === "1";
+  const perTimeout = probe ? 8000 : 50000;   // per-mirror wait
+  const stagger = probe ? 2500 : 8000;       // start the next mirror if no answer yet
+  const errs = [];
+  const ctls = [];
+  return await new Promise(resolve => {
+    let done = false, next = 0, pending = 0, timer = null;
+    const finish = r => { if (done) return; done = true; clearTimeout(timer); ctls.forEach(c => c.abort()); resolve(r); };
+    const startNext = () => {
+      if (done || next >= MIRRORS.length) return;
+      const m = MIRRORS[next++];
+      const ctl = new AbortController(); ctls.push(ctl);
+      const to = setTimeout(() => ctl.abort(), perTimeout);
+      const t0 = Date.now();
+      pending++;
+      fetch(m, {
+        method: "POST", body, signal: ctl.signal,
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Map2Vector/1.0 (+https://map2vector.pages.dev)" }
+      }).then(async r => {
+        clearTimeout(to);
+        const txt = await r.text();
+        if (r.ok && /^\s*\{/.test(txt)) {
+          return finish(new Response(txt, {
+            status: 200,
+            headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-M2V-Server": name(m), "X-M2V-Ms": String(Date.now() - t0) }
+          }));
+        }
+        const remark = (txt.match(/<p><strong[^>]*>Error<\/strong>:\s*([^<]{0,160})/) || txt.match(/"remark":\s*"([^"]{0,160})/) || [])[1];
+        throw new Error("HTTP " + r.status + (remark ? " (" + remark.trim() + ")" : ""));
+      }).catch(e => {
+        clearTimeout(to);
+        if (done) return;
+        errs.push(name(m) + ": " + (e && e.name === "AbortError" ? "timeout " + Math.round(perTimeout / 1000) + "s" : (e && e.message) || String(e)));
+        pending--;
+        if (next < MIRRORS.length) { clearTimeout(timer); startNext(); schedule(); }
+        else if (pending === 0) finish(json({ error: errs.join(" / ") }, 502));
+      });
+    };
+    const schedule = () => { if (!done && next < MIRRORS.length) timer = setTimeout(() => { startNext(); schedule(); }, stagger); };
+    startNext();
+    schedule();
   });
-  const out = new Response(res.body, res);
-  out.headers.set("Cache-Control", `public, max-age=${TTL}`);
-  if (res.ok) context.waitUntil(cache.put(key, out.clone()));
-  return withCORS(out);
 }
 
-export function onRequestOptions() {
-  return withCORS(new Response(null, { status: 204 }));
-}
-
-function withCORS(r) {
-  const h = new Headers(r.headers);
-  h.set("Access-Control-Allow-Origin", "*");
-  h.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  h.set("Access-Control-Allow-Headers", "Content-Type");
-  return new Response(r.body, { status: r.status, headers: h });
-}
-
-async function sha1(s) {
-  const d = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(s));
-  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("");
+export async function onRequestGet() {
+  return json({ ok: true, mirrors: MIRRORS.map(name), hedged: true }, 200);
 }
