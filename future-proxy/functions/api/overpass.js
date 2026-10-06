@@ -2,9 +2,11 @@
 const MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter"
+  "https://lz4.overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://z.overpass-api.de/api/interpreter"
 ];
-const name = u => /overpass-api\.de/.test(u) ? "de" : /kumi/.test(u) ? "kumi" : /coffee/.test(u) ? "coffee" : u;
+const name = u => /lz4\.overpass-api\.de/.test(u) ? "lz4" : /z\.overpass-api\.de/.test(u) ? "z" : /overpass-api\.de/.test(u) ? "de" : /kumi/.test(u) ? "kumi" : /coffee/.test(u) ? "coffee" : u;
 const json = (obj, status, extra) => new Response(JSON.stringify(obj), {
   status,
   headers: Object.assign({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, extra || {})
@@ -57,6 +59,21 @@ export async function onRequestPost({ request }) {
   });
 }
 
-export async function onRequestGet() {
-  return json({ ok: true, mirrors: MIRRORS.map(name), hedged: true }, 200);
+export async function onRequestGet({ request }) {
+  const u = new URL(request.url);
+  if (u.searchParams.get("diag") !== "1") return json({ ok: true, mirrors: MIRRORS.map(name), hedged: true }, 200);
+  const q = "data=" + encodeURIComponent("[out:json][timeout:5];node(1);out;");
+  const res = await Promise.all(MIRRORS.map(async m => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 6000);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(m, { method: "POST", body: q, signal: ctl.signal, headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "Map2Vector/1.0 (+https://map2vector.pages.dev)" } });
+      const txt = await r.text();
+      return { mirror: name(m), ok: r.ok && /^\s*\{/.test(txt), status: r.status, ms: Date.now() - t0 };
+    } catch (e) {
+      return { mirror: name(m), ok: false, err: e && e.name === "AbortError" ? "timeout 6s" : String(e && e.message || e), ms: Date.now() - t0 };
+    } finally { clearTimeout(t); }
+  }));
+  return json({ checkedAt: new Date().toISOString(), from: "cloudflare", mirrors: res }, 200);
 }
